@@ -1232,6 +1232,8 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
     options.forEach(o => { const b = h('button', 'pick', o.html); b.type = 'button'; b.dataset.key = o.key; b.setAttribute('aria-label', o.label || 'choice'); b.addEventListener('click', () => { if (row.dataset.locked) return; btns.forEach(x => x.classList.remove('wrong', 'right', 'glow-hint')); onPick(o.key, b); }); row.appendChild(b); btns.push(b); });
     return { el: row, btns, lock() { row.dataset.locked = '1'; }, find: k => btns.find(b => b.dataset.key === k) };
   }
+  // after a right answer, wait for the student to press a button (no auto-advance)
+  function waitNext(label, fn) { T.act.hidden = false; T.act.disabled = false; T.act.textContent = label; T.act.onclick = () => { T.act.hidden = true; fn(); }; }
   function makeWrap(container, cls) { const wrap = h('div', 'board-wrap ' + (cls || '')); container.appendChild(wrap); return wrap; }
   const sceneStub = () => ({ stopFlow() { } });
 
@@ -1459,7 +1461,7 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
       sr.remove(); const list = cfg.questions(state.mode); let i = 0;
       (function next() {
         const old = T.body.querySelector('.choices'); if (old) old.remove(); const q = list[i]; if (q.pre) q.pre(sc);
-        askChoice(T.body, { prompt: q.prompt, options: q.options, hint1: q.hint1, hint2: q.hint2, onGood: () => { say(q.done, 'cheer', 'good'); i++; if (i >= list.length) finishTask(ctx); else later(next, 2500 * SPEED); } });
+        askChoice(T.body, { prompt: q.prompt, options: q.options, hint1: q.hint1, hint2: q.hint2, onGood: () => { say(q.done, 'cheer', 'good'); i++; if (i >= list.length) finishTask(ctx); else waitNext('Next question', next); } });
       })();
     }
   }
@@ -1469,7 +1471,7 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
     const rounds = cfg.rounds(state.mode); let i = 0;
     (function next() {
       T.body.innerHTML = ''; stopBoards(); const r = rounds[i]; if (r.build) { const sc = r.build(T.body); if (sc) activeBoards.push(sc); }
-      askChoice(T.body, { prompt: (rounds.length > 1 ? 'Question ' + (i + 1) + ' of ' + rounds.length + ': ' : '') + r.prompt, options: r.options, hint1: r.hint1, hint2: r.hint2, onGood: () => { say(r.done, 'cheer', 'good'); i++; if (i >= rounds.length) finishTask(ctx); else later(next, 2600 * SPEED); } });
+      askChoice(T.body, { prompt: (rounds.length > 1 ? 'Question ' + (i + 1) + ' of ' + rounds.length + ': ' : '') + r.prompt, options: r.options, hint1: r.hint1, hint2: r.hint2, onGood: () => { say(r.done, 'cheer', 'good'); i++; if (i >= rounds.length) finishTask(ctx); else waitNext('Next question', next); } });
     })();
   }
   // plain multiple choice (no picture)
@@ -1479,7 +1481,7 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
     if (cfg.build) { const sc = cfg.build(T.body); if (sc) activeBoards.push(sc); }
     (function next() {
       const old = T.body.querySelector('.choices'); if (old) old.remove(); const q = list[i]; if (q.pre && cfg.scene) q.pre(cfg.scene);
-      askChoice(T.body, { prompt: q.prompt, options: q.options, hint1: q.hint1, hint2: q.hint2, onGood: () => { say(q.done, 'cheer', 'good'); i++; if (i >= list.length) finishTask(ctx); else later(next, 2500 * SPEED); } });
+      askChoice(T.body, { prompt: q.prompt, options: q.options, hint1: q.hint1, hint2: q.hint2, onGood: () => { say(q.done, 'cheer', 'good'); i++; if (i >= list.length) finishTask(ctx); else waitNext('Next question', next); } });
     })();
   }
   // put items in order (slots 1..n)
@@ -1647,9 +1649,10 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
     inp.addEventListener('input', () => { if (done) return; cur = +inp.value; sc.set(cur); check(); });
     function start() { done = false; level = 0; sc.setTarget(targets[n]); inp.value = 12; cur = 12; sc.set(12); setPrompt('Shadow ' + (n + 1) + ' of ' + targets.length + ': slide the Sun until the shadow covers the dashed one.'); fb.textContent = ''; }
     function check() {
-      const T0 = targets[n]; if (Math.abs(cur - T0) <= 0.5) { done = true; fb.textContent = 'It fits!'; say('You made it! At ' + fmtTime(T0) + ' the shadow is ' + shadowWord(T0) + ' and points ' + dirWord(T0) + '.', 'cheer', 'good'); n++; if (n >= targets.length) { T.act.hidden = true; finishTask(ctx); } else later(start, 3000 * SPEED); }
+      const T0 = targets[n]; if (Math.abs(cur - T0) <= 0.5) { done = true; fb.textContent = 'It fits!'; say('You made it! At ' + fmtTime(T0) + ' the shadow is ' + shadowWord(T0) + ' and points ' + dirWord(T0) + '.', 'cheer', 'good'); n++; if (n >= targets.length) { T.act.hidden = true; finishTask(ctx); } else waitNext('Next shadow', () => { hintBtn(); start(); }); }
       else if (level >= 1) fb.textContent = cur < T0 ? 'Too early. Move the Sun later.' : 'Too late. Move the Sun earlier.';
     }
+    const hintBtn = () => { T.act.textContent = 'Need a hint?'; T.act.hidden = false; T.act.onclick = () => { if (!done) lad.give(''); }; };
     const lad = ladder([
       () => ({ text: 'Which way does the dashed shadow point? Mornings point west (left). Afternoons point east (right).' }),
       () => { level = 1; check(); return { text: 'Is the dashed shadow long or short? Short shadows are near noon.' }; },
@@ -1770,7 +1773,7 @@ document.querySelectorAll("img[data-img]").forEach(i => { i.src = IMG(i.dataset.
       const lad = ladder([() => ({ text: 'The Sun lights the half of the Moon that faces it. How much of that lit half faces Earth?' }), () => ({ text: phaseHint(mu) }), () => { const g = pr.find('good'); if (g) g.classList.add('glow-hint'); return { text: 'Look at the glowing picture.' }; }]);
       const pr = pickRow(shuffle([{ key: 'good', html: moonIcon(mu), label: moonName(mu) }].concat(others.map((x, i) => ({ key: 'w' + i, html: moonIcon(x), label: moonName(x) })))), (k, b) => {
         if (locked) return;
-        if (k === 'good') { locked = true; pr.lock(); b.classList.add('right'); say('Yes! ' + phaseHint(mu), 'cheer', 'good'); n++; if (n >= list.length) finishTask(ctx); else later(ask, 3200 * SPEED); }
+        if (k === 'good') { locked = true; pr.lock(); b.classList.add('right'); say('Yes! ' + phaseHint(mu), 'cheer', 'good'); n++; if (n >= list.length) finishTask(ctx); else waitNext('Next question', ask); }
         else { b.classList.add('wrong'); lad.give('Not quite. '); }
       });
       T.body.appendChild(pr.el);
